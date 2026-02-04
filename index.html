@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fábrica de Héroes - Crea tu Aventura</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(255, 140, 0, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(255, 140, 0, 0.8); }
+        }
+        @keyframes shimmer {
+            0% { background-position: -1000px 0; }
+            100% { background-position: 1000px 0; }
+        }
+        @keyframes unlock-animation {
+            0% { transform: scale(1) rotate(0deg); }
+            50% { transform: scale(1.1) rotate(-5deg); }
+            100% { transform: scale(0.95) rotate(0deg); }
+        }
+        @keyframes fade-out {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        @keyframes reveal {
+            from { opacity: 0; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .pulse-glow { animation: pulse-glow 2s infinite; }
+        .shimmer {
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            background-size: 1000px 100%;
+            animation: shimmer 2s infinite;
+        }
+        .hero-gradient {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        }
+        .hero-text-gradient {
+            background: linear-gradient(135deg, #ff8c00 0%, #ffa500 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .spinner {
+            border: 4px solid rgba(255, 140, 0, 0.1);
+            border-top: 4px solid #ff8c00;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .lock-button {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .lock-button:hover {
+            transform: scale(1.05);
+        }
+        .lock-button.unlocking {
+            animation: unlock-animation 0.6s ease;
+        }
+        .lock-button.unlocked {
+            animation: fade-out 0.5s ease forwards;
+        }
+        .unlock-message {
+            animation: reveal 0.8s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app"></div>
+
+    <script>
+        // Estado de la aplicación
+        const app = {
+            currentScreen: 'welcome',
+            heroData: null,
+            story: null,
+            image: null,
+            storyCount: 0,
+            useAI: true,
+            apiKey: 'sk-proj-Uw0Mzys5DVHoYTPWR1b50En',
+            isUnlocked: false,
+            generatedImage: null
+        };
+
+        // Cargar estado guardado del localStorage
+        function loadState() {
+            const saved = localStorage.getItem('fabrica-heroes-state');
+            if (saved) {
+                const state = JSON.parse(saved);
+                app.isUnlocked = state.isUnlocked || false;
+                app.storyCount = state.storyCount || 0;
+            }
+        }
+
+        // Guardar estado en localStorage
+        function saveState() {
+            localStorage.setItem('fabrica-heroes-state', JSON.stringify({
+                isUnlocked: app.isUnlocked,
+                storyCount: app.storyCount
+            }));
+        }
+
+        // Historias personalizadas (fallback)
+        const storyTemplates = [
+            {
+                intro: "Érase una vez, en un reino lejano, vivía {heroName}, un/a joven de {heroAge} años con un don extraordinario: ¡podía {superpower}! Pero su vida cambió cuando descubrió que {villain} amenazaba la paz del reino.",
+                middle: "Con valentía en el corazón, {heroName} decidió enfrentarse al peligro. Utilizando su increíble poder de {superpower}, comenzó una aventura épica llena de desafíos y sorpresas.",
+                climax: "En el momento más crítico, cuando todo parecía perdido, {heroName} recordó que su verdadera fuerza no venía solo de {superpower}, sino de su determinación y coraje. Con un último esfuerzo sobrehumano, logró vencer a {villain} y salvar el reino."
+            },
+            {
+                intro: "En las montañas del norte, nació {heroName}, un/a niño/a de {heroAge} años bendecido/a con el poder de {superpower}. Pero cuando {villain} llegó a su pueblo, todo cambió.",
+                middle: "{heroName} no podía quedarse de brazos cruzados. Con su poder de {superpower}, se preparó para la batalla más importante de su vida.",
+                climax: "La batalla fue épica. {heroName} utilizó cada habilidad, cada truco, cada gota de magia de {superpower} para proteger a su gente. Y cuando parecía que {villain} iba a ganar, {heroName} descubrió un poder aún mayor dentro de sí."
+            },
+            {
+                intro: "En la ciudad de los sueños vivía {heroName}, un/a chico/a de {heroAge} años con un secreto: ¡podía {superpower}! Nadie lo sabía... hasta que {villain} atacó.",
+                middle: "Sin pensarlo dos veces, {heroName} salió a la luz. Su poder de {superpower} brillaba como nunca antes, iluminando el camino hacia la victoria.",
+                climax: "La confrontación final llegó. {heroName} enfrentó a {villain} con todo su poder de {superpower}, y en ese momento, descubrió que era mucho más fuerte de lo que jamás imaginó. La victoria estaba cerca."
+            }
+        ];
+
+        // Generar historia con IA (ChatGPT)
+        async function generateStoryWithAI(heroData) {
+            try {
+                const prompt = `Escribe una historia corta y emocionante para niños (máximo 150 palabras) sobre un héroe llamado ${heroData.heroName} de ${heroData.heroAge} años que tiene el superpoder de ${heroData.superpower} y debe enfrentarse a ${heroData.villain}. La historia debe ser inspiradora, aventurera y apropiada para niños. Incluye: introducción, conflicto y resolución épica.`;
+
+                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${app.apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-3.5-turbo',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: prompt
+                            }
+                        ],
+                        max_tokens: 300,
+                        temperature: 0.7
+                    })
+                });
+
+                if (!response.ok) {
+                    console.error('Error de API:', response.status);
+                    return null;
+                }
+
+                const data = await response.json();
+                return data.choices[0].message.content;
+            } catch (error) {
+                console.error('Error al generar historia con IA:', error);
+                return null;
+            }
+        }
+
+        // Generar imagen con IA usando Hugging Face
+        async function generateImageWithAI(heroData, story) {
+            try {
+                // Crear un prompt descriptivo basado en la historia y el héroe
+                const imagePrompt = `A colorful and vibrant illustration of a young superhero named ${heroData.heroName}, age ${heroData.heroAge}, with the superpower of ${heroData.superpower}, facing ${heroData.villain}. The style should be cartoon-like, friendly, and inspiring for children. Bright colors, dynamic pose, heroic stance.`;
+
+                // Usar Hugging Face API para generar imagen
+                const response = await fetch(
+                    "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2",
+                    {
+                        headers: { Authorization: `Bearer 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` },
+                        method: "POST",
+                        body: JSON.stringify({ inputs: imagePrompt }),
+                    }
+                );
+
+                const result = await response.blob();
+                return URL.createObjectURL(result);
+            } catch (error) {
+                console.error('Error al generar imagen:', error);
+                return generatePlaceholderImage(heroData);
+            }
+        }
+
+        // Generar imagen placeholder
+        function generatePlaceholderImage(heroData) {
+            const colors = ['FF6B6B', 'FF8C00', '4ECDC4', '45B7D1', 'FFA07A', '9B59B6', '3498DB'];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+            return `https://via.placeholder.com/400x300/${color}/FFFFFF?text=${encodeURIComponent(heroData.heroName)}`;
+        }
+
+        // Generar historia personalizada (template)
+        function generateStory(heroData) {
+            const template = storyTemplates[Math.floor(Math.random() * storyTemplates.length)];
+            
+            let story = template.intro
+                .replace(/{heroName}/g, heroData.heroName)
+                .replace(/{heroAge}/g, heroData.heroAge)
+                .replace(/{superpower}/g, heroData.superpower)
+                .replace(/{villain}/g, heroData.villain);
+            
+            story += " " + template.middle
+                .replace(/{heroName}/g, heroData.heroName)
+                .replace(/{superpower}/g, heroData.superpower)
+                .replace(/{villain}/g, heroData.villain);
+            
+            story += " " + template.climax
+                .replace(/{heroName}/g, heroData.heroName)
+                .replace(/{superpower}/g, heroData.superpower)
+                .replace(/{villain}/g, heroData.villain);
+
+            return story;
+        }
+
+        // Renderizar pantalla de bienvenida
+        function renderWelcome() {
+            return `
+                <div class="hero-gradient min-h-screen flex items-center justify-center p-4">
+                    <div class="text-center max-w-2xl fade-in">
+                        <div class="mb-8">
+                            <h1 class="text-5xl md:text-6xl font-bold text-white mb-4">
+                                🦸 Fábrica de Héroes
+                            </h1>
+                            <p class="text-xl md:text-2xl text-gray-200 mb-8">
+                                Convierte a tu hijo/a en el protagonista de su propia película
+                            </p>
+                        </div>
+
+                        <div class="bg-white rounded-lg shadow-2xl p-8 mb-8">
+                            <p class="text-gray-700 text-lg mb-8">
+                                Crea historias personalizadas donde tu hijo/a es el héroe. Cada aventura es única, emocionante y memorable.
+                            </p>
+
+                            <div class="grid md:grid-cols-3 gap-4 mb-8">
+                                <div class="p-4 bg-blue-50 rounded-lg">
+                                    <div class="text-3xl mb-2">✨</div>
+                                    <h3 class="font-bold text-gray-800 mb-2">Historias IA</h3>
+                                    <p class="text-sm text-gray-600">Generadas con inteligencia artificial (ChatGPT)</p>
+                                </div>
+                                <div class="p-4 bg-orange-50 rounded-lg">
+                                    <div class="text-3xl mb-2">🎨</div>
+                                    <h3 class="font-bold text-gray-800 mb-2">Imágenes Únicas</h3>
+                                    <p class="text-sm text-gray-600">Ilustraciones personalizadas para cada héroe</p>
+                                </div>
+                                <div class="p-4 bg-green-50 rounded-lg">
+                                    <div class="text-3xl mb-2">📖</div>
+                                    <h3 class="font-bold text-gray-800 mb-2">PDF Descargable</h3>
+                                    <p class="text-sm text-gray-600">Guarda la aventura para siempre</p>
+                                </div>
+                            </div>
+
+                            <button onclick="app.currentScreen = 'form'; render()" class="bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 text-white font-bold py-4 px-8 rounded-lg text-lg pulse-glow w-full transition">
+                                🚀 Crear Aventura
+                            </button>
+                        </div>
+
+                        <p class="text-gray-300 text-sm">
+                            Precio: $1.000 ARS | Acceso completo a la historia
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Renderizar formulario
+        function renderForm() {
+            return `
+                <div class="hero-gradient min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md fade-in">
+                        <h2 class="text-3xl font-bold text-gray-800 mb-6">Crea tu Héroe</h2>
+                        <p class="text-gray-600 mb-6">Cuéntanos sobre tu protagonista</p>
+
+                        <form onsubmit="handleFormSubmit(event)">
+                            <div class="mb-4">
+                                <label class="block text-gray-700 font-bold mb-2">
+                                    📝 Nombre del Héroe
+                                </label>
+                                <input type="text" id="heroName" required placeholder="Ej: Luna" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-orange-400">
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="block text-gray-700 font-bold mb-2">
+                                    🎂 Edad del Héroe
+                                </label>
+                                <input type="number" id="heroAge" required min="3" max="18" placeholder="Ej: 8" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-orange-400">
+                            </div>
+
+                            <div class="mb-4">
+                                <label class="block text-gray-700 font-bold mb-2">
+                                    ⚡ Superpoder
+                                </label>
+                                <input type="text" id="superpower" required placeholder="Ej: volar, invisibilidad, telepatía" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-orange-400">
+                            </div>
+
+                            <div class="mb-6">
+                                <label class="block text-gray-700 font-bold mb-2">
+                                    👹 Villano o Miedo a Vencer
+                                </label>
+                                <input type="text" id="villain" required placeholder="Ej: dragón de fuego, sombra oscura" class="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-orange-400">
+                            </div>
+
+                            <button type="submit" class="w-full bg-gradient-to-r from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 text-white font-bold py-3 rounded-lg pulse-glow transition">
+                                ✨ Generar Mi Aventura
+                            </button>
+                        </form>
+
+                        <button onclick="app.currentScreen = 'welcome'; render()" class="w-full mt-4 text-gray-600 hover:text-gray-800 font-semibold py-2">
+                            ← Volver
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Renderizar pantalla de carga
+        function renderLoading() {
+            const isAI = app.useAI && app.storyCount < 10;
+            const messages = isAI ? [
+                'Consultando a ChatGPT...',
+                'Escribiendo aventura épica...',
+                'Generando imágenes mágicas...'
+            ] : [
+                'Preparando aventura...',
+                'Seleccionando historia...',
+                'Generando imágenes...'
+            ];
+
+            return `
+                <div class="hero-gradient min-h-screen flex items-center justify-center p-4">
+                    <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md text-center fade-in">
+                        <div class="flex justify-center mb-6">
+                            <div class="spinner"></div>
+                        </div>
+                        <h2 class="text-2xl font-bold text-gray-800 mb-4">Generando tu Aventura</h2>
+                        <div class="space-y-3">
+                            ${messages.map(msg => `<p class="text-gray-600 shimmer p-2 rounded">${msg}</p>`).join('')}
+                        </div>
+                        ${isAI ? '<p class="text-xs text-orange-600 mt-4">✨ Usando IA (ChatGPT)</p>' : '<p class="text-xs text-blue-600 mt-4">📚 Usando templates</p>'}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Renderizar resultado con candado interactivo
+        function renderResult() {
+            const isLocked = !app.isUnlocked;
+            
+            return `
+                <div class="min-h-screen bg-gradient-to-b from-blue-50 to-white p-4">
+                    <div class="max-w-4xl mx-auto fade-in">
+                        <!-- Header -->
+                        <div class="text-center mb-8 pt-8">
+                            <h1 class="text-4xl font-bold text-gray-800 mb-2">
+                                🦸 ${app.heroData.heroName}, el Héroe
+                            </h1>
+                            <p class="text-gray-600">Tu aventura personalizada</p>
+                        </div>
+
+                        <!-- Contenedor principal -->
+                        <div class="bg-white rounded-lg shadow-2xl overflow-hidden mb-8">
+                            <div class="grid md:grid-cols-2 gap-8 p-8">
+                                <!-- Imagen con Candado Interactivo -->
+                                <div class="flex items-center justify-center relative">
+                                    ${isLocked ? `
+                                        <div class="relative w-full">
+                                            <img src="locked-hero-placeholder.png" alt="Bloqueado" class="w-full rounded-lg shadow-lg">
+                                            <div class="absolute inset-0 flex items-center justify-center">
+                                                <button onclick="unlockStory()" class="lock-button focus:outline-none" title="Haz clic para desbloquear">
+                                                    <div class="text-8xl cursor-pointer hover:scale-110 transition">🔒</div>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ` : `
+                                        <div class="unlock-message">
+                                            <img src="${app.generatedImage}" alt="${app.heroData.heroName}" class="w-full rounded-lg shadow-lg">
+                                        </div>
+                                    `}
+                                </div>
+
+                                <!-- Historia -->
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Tu Historia</h2>
+                                    <div class="bg-blue-50 p-6 rounded-lg mb-6">
+                                        <p class="text-gray-700 leading-relaxed text-lg">
+                                            ${app.story}
+                                        </p>
+                                        ${!isLocked ? `
+                                            <p class="text-orange-600 font-bold mt-4 text-center">
+                                                ✨ ¡Historia Completa Desbloqueada! ✨
+                                            </p>
+                                        ` : `
+                                            <p class="text-orange-600 font-bold mt-4 text-center">
+                                                [Haz clic en el candado para desbloquear la historia completa...]
+                                            </p>
+                                        `}
+                                    </div>
+
+                                    <!-- Info del héroe -->
+                                    <div class="grid grid-cols-2 gap-4 mb-6">
+                                        <div class="bg-gray-50 p-4 rounded-lg">
+                                            <p class="text-sm text-gray-600">Edad</p>
+                                            <p class="text-xl font-bold text-gray-800">${app.heroData.heroAge} años</p>
+                                        </div>
+                                        <div class="bg-gray-50 p-4 rounded-lg">
+                                            <p class="text-sm text-gray-600">Superpoder</p>
+                                            <p class="text-xl font-bold text-gray-800">${app.heroData.superpower}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Botones de acción -->
+                        ${isLocked ? `
+                            <!-- Botón de Pago -->
+                            <div class="bg-gradient-to-r from-orange-400 to-orange-600 rounded-lg shadow-2xl p-8 text-center mb-8 pulse-glow">
+                                <h3 class="text-2xl font-bold text-white mb-2">🎬 Desbloquear Aventura Completa</h3>
+                                <p class="text-orange-100 mb-6">Obtén la historia completa, imagen única y descarga en PDF</p>
+                                <a href="https://mpago.la/2Bx1TBr" target="_blank" class="inline-block bg-white text-orange-600 font-bold py-4 px-8 rounded-lg hover:bg-orange-50 transition text-lg">
+                                    💳 Desbloquear por $1.000 ARS
+                                </a>
+                                <p class="text-orange-100 text-sm mt-4">Acceso inmediato • Sin suscripción</p>
+                            </div>
+
+                            <!-- Botón de Verificación -->
+                            <div class="text-center mb-8">
+                                <button onclick="verifyPayment()" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-lg transition text-lg">
+                                    ✅ Ya pagué, verificar ahora
+                                </button>
+                            </div>
+                        ` : `
+                            <!-- Botón de Descarga PDF -->
+                            <div class="bg-gradient-to-r from-green-400 to-green-600 rounded-lg shadow-2xl p-8 text-center mb-8">
+                                <h3 class="text-2xl font-bold text-white mb-2">📥 Descargar tu Aventura</h3>
+                                <p class="text-green-100 mb-6">Guarda tu historia en PDF para compartir y conservar</p>
+                                <button onclick="downloadPDF()" class="inline-block bg-white text-green-600 font-bold py-4 px-8 rounded-lg hover:bg-green-50 transition text-lg">
+                                    📄 Descargar PDF
+                                </button>
+                            </div>
+
+                            <!-- Mensaje de Felicitaciones -->
+                            <div class="bg-yellow-50 border-4 border-yellow-400 rounded-lg p-6 mb-8 text-center unlock-message">
+                                <h3 class="text-3xl font-bold text-yellow-600 mb-2">🎉 ¡FELICIDADES! 🎉</h3>
+                                <p class="text-gray-700 text-lg">Tu aventura está completamente desbloqueada. Ahora puedes ver la imagen única generada por IA y descargar tu historia en PDF.</p>
+                            </div>
+                        `}
+
+                        <!-- Botón volver -->
+                        <div class="text-center">
+                            <button onclick="app.currentScreen = 'welcome'; app.isUnlocked = false; app.generatedImage = null; render()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-8 rounded-lg transition">
+                                ← Crear otra aventura
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Verificar pago y desbloquear
+        function verifyPayment() {
+            app.isUnlocked = true;
+            saveState();
+            render();
+        }
+
+        // Desbloquear historia (función principal)
+        function unlockStory() {
+            const lockButton = document.querySelector('.lock-button');
+            if (lockButton) {
+                lockButton.classList.add('unlocking');
+                setTimeout(() => {
+                    app.isUnlocked = true;
+                    saveState();
+                    render();
+                }, 600);
+            }
+        }
+
+        // Descargar PDF
+        function downloadPDF() {
+            const element = document.createElement('div');
+            element.innerHTML = `
+                <div style="padding: 20px; font-family: Arial, sans-serif;">
+                    <h1 style="text-align: center; color: #1e3c72; margin-bottom: 10px;">🦸 ${app.heroData.heroName}, el Héroe</h1>
+                    <p style="text-align: center; color: #666; margin-bottom: 20px;">Tu aventura personalizada</p>
+                    
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <img src="${app.generatedImage}" style="max-width: 100%; height: auto; border-radius: 8px;">
+                    </div>
+                    
+                    <h2 style="color: #1e3c72; margin-top: 20px;">Tu Historia</h2>
+                    <p style="line-height: 1.6; color: #333; font-size: 14px;">${app.story}</p>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background-color: #f0f0f0; border-radius: 8px;">
+                        <p><strong>Edad:</strong> ${app.heroData.heroAge} años</p>
+                        <p><strong>Superpoder:</strong> ${app.heroData.superpower}</p>
+                        <p><strong>Villano:</strong> ${app.heroData.villain}</p>
+                    </div>
+                    
+                    <p style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
+                        Creado con Fábrica de Héroes ✨
+                    </p>
+                </div>
+            `;
+
+            const opt = {
+                margin: 10,
+                filename: `${app.heroData.heroName}-aventura.pdf`,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2 },
+                jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+            };
+
+            html2pdf().set(opt).from(element).save();
+        }
+
+        // Manejar envío del formulario
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            
+            app.heroData = {
+                heroName: document.getElementById('heroName').value,
+                heroAge: document.getElementById('heroAge').value,
+                superpower: document.getElementById('superpower').value,
+                villain: document.getElementById('villain').value
+            };
+
+            app.currentScreen = 'loading';
+            render();
+
+            // Generar historia
+            let story;
+            if (app.useAI && app.storyCount < 10) {
+                story = await generateStoryWithAI(app.heroData);
+                if (!story) {
+                    story = generateStory(app.heroData);
+                }
+            } else {
+                story = generateStory(app.heroData);
+            }
+
+            app.story = story;
+            app.storyCount++;
+
+            // Generar imagen
+            app.generatedImage = await generateImageWithAI(app.heroData, story);
+
+            // Resetear estado de desbloqueo
+            app.isUnlocked = false;
+
+            app.currentScreen = 'result';
+            render();
+        }
+
+        // Renderizar la aplicación
+        function render() {
+            const app_div = document.getElementById('app');
+            let content = '';
+
+            switch(app.currentScreen) {
+                case 'welcome':
+                    content = renderWelcome();
+                    break;
+                case 'form':
+                    content = renderForm();
+                    break;
+                case 'loading':
+                    content = renderLoading();
+                    break;
+                case 'result':
+                    content = renderResult();
+                    break;
+                default:
+                    content = renderWelcome();
+            }
+
+            app_div.innerHTML = content;
+        }
+
+        // Inicializar
+        loadState();
+        render();
+    </script>
+</body>
+</html>
