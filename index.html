@@ -92,7 +92,7 @@
             image: null,
             storyCount: 0,
             useAI: true,
-            apiKey: 'sk-proj-Uw0Mzys5DVHoYTPWR1b50En',
+            apiKey: '', // Configurar en consola del navegador
             isUnlocked: false,
             generatedImage: null
         };
@@ -181,7 +181,7 @@
                 const response = await fetch(
                     "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2",
                     {
-                        headers: { Authorization: `Bearer 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` },
+                        headers: { Authorization: `Bearer YOUR_HUGGING_FACE_TOKEN` },
                         method: "POST",
                         body: JSON.stringify({ inputs: imagePrompt }),
                     }
